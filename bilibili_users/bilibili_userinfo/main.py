@@ -10,6 +10,7 @@
 import requests
 import pymysql
 import time
+import datetime
 
 from bilibili_userinfo import logger, connect, headers
 
@@ -23,9 +24,10 @@ total = 0
 def run(user_id):
     """
     开始爬取用户个人信息
-    :param user_id:
+    :param user_id
     :return:
     """
+    # time.sleep(0.5)
     enter_space(user_id)
 
 def enter_space(user_id):
@@ -68,7 +70,19 @@ def get_basic_userinfo(user_id):
             content = response.json()
             if content.get('data'):
                 data = content['data']
-                regtime = time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(data['regtime']))
+                try :
+                    regtime = time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(data['regtime']))
+                except :
+                    logger.info('用户没有regtime这个标签， user_id = {}'.format(user_id))
+                    regtime = 0
+                    pass
+                try :
+                    birthday = data['birthday']
+                except :
+                    logger.info('用户没有birthday这个标签， user_id = {}'.format(user_id))
+                    birthday = 0
+                    regtime = 0
+                    pass
                 result =  (
                     data['mid'],
                     data['name'],
@@ -77,7 +91,8 @@ def get_basic_userinfo(user_id):
                     data['face'],
                     regtime,
                     data['spacesta'],
-                    data['birthday'],
+                    # data['birthday'],
+                    birthday,
                     data['sign'],
                     data['level_info']['current_level'],
                     data['official_verify']['desc'],
@@ -95,7 +110,8 @@ def get_basic_userinfo(user_id):
                 result += get_add_userfollow(user_id)
                 result += get_add_usercount(user_id)
                 result += get_add_userview(user_id)
-                logger.info(result)
+                # logger.info(result)
+                # 将用户个人信息保存到mysql数据库中
                 save_userinfo_mysql(result)
                 total += 1
                 if total%100 == 0:
@@ -191,9 +207,12 @@ def save_userinfo_mysql(result):
     """
     global conn, cur
 
-    sql_select = 'select mid from bilibili_userinfo where not exists (select * from bilibili_upinfo where mid = {});'.format(result[0])
-    # logger.info(cur.execute(sql_select))
-    if 0 == cur.execute(sql_select) & 0 != cur.execute('select * from bilibili_userinfo'):
+    sql_select = 'select count(*) from bilibili_userinfo where mid = {};'.format(result[0])
+    # logger.info(cur.execute(sql_select))& 0 != cur.execute('select * from bilibili_userinfo')
+    cur.execute(sql_select)
+    count = cur.fetchall()[0][0]
+    logger.info('count = {}'.format(count))
+    if 0 != count :
         logger.info('用户个人信息在数据库中已存在， user_id = {}'.format(result[0]))
     else :
         sql_insert = 'insert into bilibili_userinfo values(NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,' \
@@ -207,10 +226,15 @@ def save_userinfo_mysql(result):
     conn.commit()
 
 if __name__ == '__main__':
-    logger.info('开始爬取B站用户个人信息数据')
+    logger.info('运行开始，开始爬取B站用户个人信息数据')
 
-    user_id = 1
-    run(user_id)
+    time_start = datetime.datetime.now()
 
-    logger.info('运行结束，共计爬取到{}条数据'.format(total))
+    for user_id in range(102, 201):
+        run(user_id)
+
+    time_end = datetime.datetime.now()
+    time =  (time_end - time_start).seconds
+
+    logger.info('运行结束，共计爬取到{}条数据，运行时间是{}秒'.format(total, time))
     conn.close()
